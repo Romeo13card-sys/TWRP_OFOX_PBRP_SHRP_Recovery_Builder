@@ -15,23 +15,23 @@ on:
       DEVICE_TREE:
         description: 'Custom Recovery Tree' # Your already made Device Tree for TWRP
         required: true
-        default: 'https://github.com/enter_username/repo_name'
+        default: 'https://github.com/PitchBlackRecoveryProject/android_device_xiaomi_fog-pbrp'
       DEVICE_TREE_BRANCH:
         description: 'Your Custom Recovery Tree Branch' # Your Device Tree Branch, make sure it's right.
         required: true
-        default: 'main'
+        default: 'android-12.1'
       DEVICE_NAME:
         description: 'Specify your Device Codename' # As is, just like your PRODUCT_DEVICE in your device tree.
         required: true
-        default: '7304X'
+        default: 'fog'
       DEVICE_PATH:
         description: 'Specify your Device Path (Check the DEVICE_PATH in BoardConfig.mk)' # As is, just like your DEVICE_PATH in your BoardConfig.mk
         required: true
-        default: 'device/device`s_company/Codename'
+        default: 'device/xiaomi/fog'
       BUILD_TARGET:
         description: 'Specify your Build Target (choose "pbrp" instead of "recovery" for Android 11 or above)' # Pick among boot, recovery and vendor_boot
         required: true
-        default: 'recovery'
+        default: 'pbrp'
         type: choice
         options:
         - pbrp
@@ -51,7 +51,7 @@ on:
 jobs:
   build:
     name: Build PBRP by ${{ github.actor }}
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     if: github.event.repository.owner.id == github.event.sender.id
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

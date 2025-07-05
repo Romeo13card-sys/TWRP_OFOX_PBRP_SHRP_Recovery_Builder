@@ -16,19 +16,19 @@ on:
         required: true
         default: 'https://github.com/Romeo13card-sys/device_xiaomi_fog-TWRP'
       DEVICE_TREE_BRANCH:
-        description: 'Custom Recovery Tree Branch (use master if default)'
+        description: 'Custom Recovery Tree Branch'
         required: true
         default: 'ofox'
       DEVICE_NAME:
-        description: 'Specify your Device Codename' # As is, just like your PRODUCT_DEVICE in your device tree.
+        description: 'Device codename (PRODUCT_DEVICE)'
         required: true
         default: 'fog'
       DEVICE_PATH:
-        description: 'Specify your Device Path (Check the DEVICE_PATH in BoardConfig.mk)' # As is, just like your DEVICE_PATH in your BoardConfig.mk
+        description: 'Device path (BoardConfig.mk DEVICE_PATH)'
         required: true
         default: 'device/xiaomi/fog'
       BUILD_TARGET:
-        description: 'Specify your Build Target' # The image suffix will be added later in build step.
+        description: 'Build target'
         required: true
         default: 'recovery'
         type: choice
@@ -37,12 +37,12 @@ on:
         - recovery
         - vendorboot
       LDCHECK:
-        description: 'Use LDCHECK'
+        description: 'Run LDCHECK'
         required: false
         default: 'false'
         type: boolean
       LDCHECKPATH:
-        description: 'Path of blobs to check' # Use it know what kind of dependencies your missing for decryption blobs.
+        description: 'LDCHECK blob path'
         required: true
         default: 'system/bin/qseecomd'
 
@@ -58,19 +58,20 @@ jobs:
 
     permissions:
       contents: write
+
     steps:
     - name: Checkout
       uses: actions/checkout@v4
-              
-    - name: Clean-up
+
+    - name: Clean up workspace
       uses: rokibhasansagar/slimhub_actions@main
 
-    - name: Swap Space
+    - name: Add swap space
       uses: pierotofy/set-swap-space@master
       with:
         swap-size-gb: 12
-      
-    - name: Build Environment
+
+    - name: Setup build environment
       run: |
         sudo apt install aria2 -y
         git clone https://gitlab.com/OrangeFox/misc/scripts.git
@@ -81,8 +82,8 @@ jobs:
       uses: hendrikmuhs/ccache-action@v1.2
       with:
         max-size: "10G"
-      
-    - name: Set-up Manifest # For github workspace use single {}
+
+    - name: Initialize manifest
       run: |
         mkdir -p ${GITHUB_WORKSPACE}/OrangeFox
         cd ${GITHUB_WORKSPACE}/OrangeFox
@@ -91,15 +92,15 @@ jobs:
         git clone https://gitlab.com/OrangeFox/sync.git -b master
         cd sync
         ./orangefox_sync.sh --branch ${{ inputs.MANIFEST_BRANCH }} --path ${GITHUB_WORKSPACE}/OrangeFox/fox_${{ inputs.MANIFEST_BRANCH }}
-      
-    - name: Clone Device Tree
+
+    - name: Clone device tree
       run: |
         cd ${{ env.ORANGEFOX_ROOT }}
         git clone ${{ inputs.DEVICE_TREE }} -b ${{ inputs.DEVICE_TREE_BRANCH }} ./${{ inputs.DEVICE_PATH }}
         cd ${{ inputs.DEVICE_PATH }}
         echo "COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
-    - name: Building OrangeFox
+    - name: Building OrangeFox Recovery
       run: |
         pushd ${{ env.ORANGEFOX_ROOT }}
         set +e
@@ -112,29 +113,28 @@ jobs:
         lunch twrp_${{ inputs.DEVICE_NAME }}-eng && make clean && mka adbd ${{ inputs.BUILD_TARGET }}image
         popd
 
-    - name: Set Build Date # Build date in UTC
-      run: |
-        echo "BUILD_DATE=$(TZ=UTC date +%Y%m%d)" >> $GITHUB_ENV
+    - name: Set build date (UTC)
+      run: echo "BUILD_DATE=$(TZ=UTC date +%Y%m%d)" >> $GITHUB_ENV
 
-    - name: Check if the recovery exists # It makes the recovery.img and renames it to Orangefox*.img but the OG should also work
+    - name: Check build output
       if: always()
       run: |
         img_file=$(find "${{ env.OUTPUT_DIR }}" -name "${{ inputs.BUILD_TARGET }}*.img" -print -quit)
         zip_file=$(find "${{ env.OUTPUT_DIR }}" -name "OrangeFox*.zip" -print -quit)
         if [ -f "$img_file" ]; then
-            echo "CHECK_IMG_IS_OK=true" >> $GITHUB_ENV
-            echo "MD5_IMG=$(md5sum "$img_file" | cut -d ' ' -f 1)" >> $GITHUB_ENV
+          echo "CHECK_IMG_IS_OK=true" >> $GITHUB_ENV
+          echo "MD5_IMG=$(md5sum "$img_file" | cut -d ' ' -f 1)" >> $GITHUB_ENV
         else
-            echo "Recovery out directory is empty."
+          echo "Recovery image not found."
         fi
         if [ -f "$zip_file" ]; then
-            echo "CHECK_ZIP_IS_OK=true" >> $GITHUB_ENV
-            echo "MD5_ZIP=$(md5sum "$zip_file" | cut -d ' ' -f 1)" >> $GITHUB_ENV
+          echo "CHECK_ZIP_IS_OK=true" >> $GITHUB_ENV
+          echo "MD5_ZIP=$(md5sum "$zip_file" | cut -d ' ' -f 1)" >> $GITHUB_ENV
         else
-            echo "::warning::The zip file isn't present but make sure the image is from only after 100% completion in build stage"
+          echo "::warning::Zip file not found. Ensure build finished successfully."
         fi
 
-    - name: Upload to Release
+    - name: Upload build artifacts to Release
       if: env.CHECK_IMG_IS_OK == 'true'
       uses: softprops/action-gh-release@master
       with:
@@ -148,12 +148,12 @@ jobs:
         body: |
           Build: ${{ inputs.MANIFEST_BRANCH }}
           Device: [Device Tree/Branch](${{ inputs.DEVICE_TREE }}/tree/${{ inputs.DEVICE_TREE_BRANCH }})
-          Commit: Most recent [commit](${{ inputs.DEVICE_TREE }}/commit/${{ env.COMMIT_ID }}) during building.
+          Commit: [${{ env.COMMIT_ID }}](${{ inputs.DEVICE_TREE }}/commit/${{ env.COMMIT_ID }})
           MD5 (img): ${{ env.MD5_IMG }}
           MD5 (zip): ${{ env.MD5_ZIP }}
         prerelease: true
 
-    - name: Run LDCheck
+    - name: Run LDCheck (optional)
       if: inputs.LDCHECK == 'true'
       run: |
         cd tools
@@ -161,5 +161,5 @@ jobs:
         mv -n ldcheck ${GITHUB_WORKSPACE}/${{ env.OUTPUT_DIR }}/${{ inputs.DEVICE_NAME }}/recovery/root/
         cd ${GITHUB_WORKSPACE}/${{ env.OUTPUT_DIR }}/${{ inputs.DEVICE_NAME }}/recovery/root
         python3 ldcheck -p system/lib64:vendor/lib64:system/lib:vendor/lib -d ${{ inputs.LDCHECKPATH }}
-        echo "Done checking missing dependencies. Review, and reconfigure your tree."
+        echo "LDCheck complete. Review results and adjust blobs if needed."
       continue-on-error: true

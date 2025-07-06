@@ -134,7 +134,7 @@ jobs:
           echo "::warning::Zip file not found. Ensure build finished successfully."
         fi
 
-    - name: Upload build artifacts to Release
+    - name: Upload to Release
       if: env.CHECK_IMG_IS_OK == 'true'
       uses: softprops/action-gh-release@master
       with:
@@ -146,11 +146,41 @@ jobs:
         name: Unofficial OrangeFox for ${{ inputs.DEVICE_NAME }} // ${{ env.BUILD_DATE }}
         tag_name: ${{ github.run_id }}
         body: |
-          Build: ${{ inputs.MANIFEST_BRANCH }}
-          Device: [Device Tree/Branch](${{ inputs.DEVICE_TREE }}/tree/${{ inputs.DEVICE_TREE_BRANCH }})
-          Commit: [${{ env.COMMIT_ID }}](${{ inputs.DEVICE_TREE }}/commit/${{ env.COMMIT_ID }})
-          MD5 (img): ${{ env.MD5_IMG }}
-          MD5 (zip): ${{ env.MD5_ZIP }}
+          ## 🦊 OrangeFox Recovery Build
+
+          **📅 Build Date (UTC):** ${{ env.BUILD_DATE }}
+          **🔢 Maintainer Patch Version:** 1
+          **⚡ Maintainer:** Romeo13card
+
+          ---
+
+          ### ✅ **Changes in this build:**
+          - Initial build for device fog
+          - Basic testing build without avatar
+
+          ---
+
+          ### 💡 **Build Info**
+          - **OrangeFox Version:** R11.3 (from source)
+          - **Build Type:** Unofficial
+          - **Device:** ${{ inputs.DEVICE_NAME }}
+
+          ---
+
+          ### 🔗 **Links**
+          - **Device tree branch:** [${{ inputs.DEVICE_TREE_BRANCH }}](${{ inputs.DEVICE_TREE }}/tree/${{ inputs.DEVICE_TREE_BRANCH }})
+          - **Commit used:** [${{ env.COMMIT_ID }}](${{ inputs.DEVICE_TREE }}/commit/${{ env.COMMIT_ID }})
+
+          ---
+
+          ### ⚠️ **Known issues**
+          - None reported yet
+
+          ---
+
+          ### 💬 **Maintainer comment**
+          > Built automatically via GitHub Actions. Flash and test at your own risk.
+
         prerelease: true
 
     - name: Run LDCheck (optional)

@@ -20,7 +20,7 @@ on:
       DEVICE_TREE:
         description: 'Custom Recovery Tree URL'
         required: true
-        default: 'https://github.com/enter_username/repo_name'
+        default: 'https://github.com/Romeo13card-sys/android_device_xiaomi_xun-recovery'
       DEVICE_TREE_BRANCH:
         description: 'Device Tree Branch (optional)'
         required: false
@@ -44,9 +44,10 @@ jobs:
   build:
     name: Build PBRP by ${{ github.actor }}
     runs-on: ubuntu-22.04
-    if: github.event.repository.owner.id == github.event.sender.id
     env:
       DEBIAN_FRONTEND: noninteractive
+      OUTPUT_DIR: ${{ github.workspace }}/out
+      DEVICE_NAME: xun
     permissions:
       contents: write
       
@@ -55,17 +56,40 @@ jobs:
       run: |
         echo "BUILD_START=$(date +%s)" >> $GITHUB_ENV
         echo "BUILD_DATE=$(TZ=UTC date +%Y%m%d)" >> $GITHUB_ENV
-        
+
     - name: Checkout
       uses: actions/checkout@v4
 
     - name: Clean-up
       uses: rokibhasansagar/slimhub_actions@main
 
-    - name: Swap Space   # Easier
+    - name: Swap Space
       uses: pierotofy/set-swap-space@master
       with:
         swap-size-gb: 24
+
+    - name: Check Device Tree Branch
+      run: |
+        BRANCH=${{ inputs.DEVICE_TREE_BRANCH }}
+        if [ -z "$BRANCH" ]; then
+          echo "DEVICE_TREE_BRANCH=main" >> $GITHUB_ENV
+        else
+          if git ls-remote --exit-code --heads ${{ inputs.DEVICE_TREE }} $BRANCH; then
+            echo "DEVICE_TREE_BRANCH=$BRANCH" >> $GITHUB_ENV
+          else
+            echo "Branch $BRANCH not found, using main"
+            echo "DEVICE_TREE_BRANCH=main" >> $GITHUB_ENV
+          fi
+        fi
+
+    - name: Init Repo
+      run: |
+        repo init -u https://github.com/PitchBlack-Devices/manifest -b ${{ inputs.MANIFEST_BRANCH }}
+        repo sync -c -j$(nproc)
+
+    - name: Clone Device Tree
+      run: |
+        git clone --branch ${{ env.DEVICE_TREE_BRANCH }} ${{ inputs.DEVICE_TREE }} device/$DEVICE_NAME
 
     - name: Build PitchBlack Recovery
       uses: mlm-games/pitchblack-pbrp-builder-action@main
@@ -73,12 +97,23 @@ jobs:
       with:
         MANIFEST_BRANCH: ${{ inputs.MANIFEST_BRANCH }}
         DEVICE_TREE:  ${{ inputs.DEVICE_TREE }}
-        DEVICE_TREE_BRANCH:  ${{ inputs.DEVICE_TREE_BRANCH }}
+        DEVICE_TREE_BRANCH:  ${{ env.DEVICE_TREE_BRANCH }}
         BUILD_TARGET:  ${{ inputs.BUILD_TARGET }}
-  
+
+    - name: Calculate MD5
+      run: |
+        cd ${{ env.OUTPUT_DIR }}
+        if ls *.img 1> /dev/null 2>&1; then
+          MD5_IMG=$(md5sum *.img | cut -d ' ' -f1)
+          echo "MD5_IMG=$MD5_IMG" >> $GITHUB_ENV
+        fi
+        if ls PBRP*.zip 1> /dev/null 2>&1; then
+          MD5_ZIP=$(md5sum PBRP*.zip | cut -d ' ' -f1)
+          echo "MD5_ZIP=$MD5_ZIP" >> $GITHUB_ENV
+        fi
+
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
-      if: inputs.upload_releases == false || github.event_name != 'workflow_dispatch'
       with:
         name: PBRP-Recovery-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}
         path: |
@@ -94,24 +129,22 @@ jobs:
         files: |
           ${{ env.OUTPUT_DIR }}/*.img
           ${{ env.OUTPUT_DIR }}/PBRP*.zip
-        name: PBRP for ${{ inputs.DEVICE_NAME }} - ${{ env.BUILD_DATE }}
+        name: PBRP for ${{ env.DEVICE_NAME }} - ${{ env.BUILD_DATE }}
         tag_name: ${{ github.run_id }}
         body: |
           ## Build Information
           - **Build Date:** ${{ env.BUILD_DATE }}
           - **Branch:** ${{ inputs.MANIFEST_BRANCH }}
-          - **Device:** ${{ inputs.DEVICE_NAME }}
+          - **Device:** ${{ env.DEVICE_NAME }}
           - **Build Type:** ${{ inputs.BUILD_TARGET }}
           
           ## Source Information
-          - **Device Tree:** [${{ inputs.DEVICE_TREE }}](${{ inputs.DEVICE_TREE }}/tree/${{ inputs.DEVICE_TREE_BRANCH }})
-          - **Branch:** ${{ inputs.DEVICE_TREE_BRANCH }}
+          - **Device Tree:** [${{ inputs.DEVICE_TREE }}](${{ inputs.DEVICE_TREE }}/tree/${{ env.DEVICE_TREE_BRANCH }})
+          - **Branch:** ${{ env.DEVICE_TREE_BRANCH }}
           
           ## Build Status
           - Recovery Image MD5: `${{ env.MD5_IMG }}`
           - ZIP Package MD5: `${{ env.MD5_ZIP }}`
-          
-          > Note: This is an automated build. Please test thoroughly before using.
         prerelease: false
         draft: false
 
@@ -134,7 +167,6 @@ jobs:
         
         echo "Build completed in ${hours}h ${minutes}m ${seconds}s"
         
-        # Save build statistics
         echo "BUILD_DURATION=${BUILD_DURATION}" >> $GITHUB_ENV
         echo "BUILD_HOURS=${hours}" >> $GITHUB_ENV
         echo "BUILD_MINUTES=${minutes}" >> $GITHUB_ENV

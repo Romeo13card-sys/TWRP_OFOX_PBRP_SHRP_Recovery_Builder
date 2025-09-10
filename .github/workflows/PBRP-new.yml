@@ -44,6 +44,7 @@ jobs:
   build:
     name: Build PBRP by ${{ github.actor }}
     runs-on: ubuntu-22.04
+    if: github.event.repository.owner.id == github.event.sender.id
     env:
       DEBIAN_FRONTEND: noninteractive
       OUTPUT_DIR: ${{ github.workspace }}/out
@@ -56,7 +57,7 @@ jobs:
       run: |
         echo "BUILD_START=$(date +%s)" >> $GITHUB_ENV
         echo "BUILD_DATE=$(TZ=UTC date +%Y%m%d)" >> $GITHUB_ENV
-
+        
     - name: Checkout
       uses: actions/checkout@v4
 
@@ -68,18 +69,24 @@ jobs:
       with:
         swap-size-gb: 24
 
+    - name: Install Repo Tool
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y curl python3
+        curl https://storage.googleapis.com/git-repo-downloads/repo | sudo tee /usr/local/bin/repo > /dev/null
+        sudo chmod a+x /usr/local/bin/repo
+
     - name: Check Device Tree Branch
       run: |
-        BRANCH=${{ inputs.DEVICE_TREE_BRANCH }}
-        if [ -z "$BRANCH" ]; then
-          echo "DEVICE_TREE_BRANCH=main" >> $GITHUB_ENV
-        else
-          if git ls-remote --exit-code --heads ${{ inputs.DEVICE_TREE }} $BRANCH; then
-            echo "DEVICE_TREE_BRANCH=$BRANCH" >> $GITHUB_ENV
-          else
-            echo "Branch $BRANCH not found, using main"
+        if [ -n "${{ inputs.DEVICE_TREE_BRANCH }}" ]; then
+          if ! git ls-remote --exit-code --heads ${{ inputs.DEVICE_TREE }} ${{ inputs.DEVICE_TREE_BRANCH }}; then
+            echo "Branch not found, using main"
             echo "DEVICE_TREE_BRANCH=main" >> $GITHUB_ENV
+          else
+            echo "DEVICE_TREE_BRANCH=${{ inputs.DEVICE_TREE_BRANCH }}" >> $GITHUB_ENV
           fi
+        else
+          echo "DEVICE_TREE_BRANCH=main" >> $GITHUB_ENV
         fi
 
     - name: Init Repo
@@ -89,28 +96,20 @@ jobs:
 
     - name: Clone Device Tree
       run: |
-        git clone --branch ${{ env.DEVICE_TREE_BRANCH }} ${{ inputs.DEVICE_TREE }} device/$DEVICE_NAME
+        git clone -b $DEVICE_TREE_BRANCH ${{ inputs.DEVICE_TREE }} device/xiaomi/xun
 
     - name: Build PitchBlack Recovery
-      uses: mlm-games/pitchblack-pbrp-builder-action@main
-      id: build
-      with:
-        MANIFEST_BRANCH: ${{ inputs.MANIFEST_BRANCH }}
-        DEVICE_TREE:  ${{ inputs.DEVICE_TREE }}
-        DEVICE_TREE_BRANCH:  ${{ env.DEVICE_TREE_BRANCH }}
-        BUILD_TARGET:  ${{ inputs.BUILD_TARGET }}
+      run: |
+        source build/envsetup.sh
+        lunch omni_${{ env.DEVICE_NAME }}-${{ inputs.BUILD_TARGET }}
+        mka recoveryimage
 
     - name: Calculate MD5
       run: |
-        cd ${{ env.OUTPUT_DIR }}
-        if ls *.img 1> /dev/null 2>&1; then
-          MD5_IMG=$(md5sum *.img | cut -d ' ' -f1)
-          echo "MD5_IMG=$MD5_IMG" >> $GITHUB_ENV
-        fi
-        if ls PBRP*.zip 1> /dev/null 2>&1; then
-          MD5_ZIP=$(md5sum PBRP*.zip | cut -d ' ' -f1)
-          echo "MD5_ZIP=$MD5_ZIP" >> $GITHUB_ENV
-        fi
+        cd $OUTPUT_DIR
+        for f in *.img *.zip; do
+          [ -f "$f" ] && echo "$(md5sum "$f" | cut -d ' ' -f1)" > "$f.md5"
+        done
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
@@ -118,9 +117,8 @@ jobs:
         name: PBRP-Recovery-${{ env.DEVICE_NAME }}-${{ env.BUILD_DATE }}
         path: |
           ${{ env.OUTPUT_DIR }}/*.img
-          ${{ env.OUTPUT_DIR }}/*.tar
-          ${{ env.OUTPUT_DIR }}/*vbmeta*
-          ${{ env.OUTPUT_DIR }}/*.cpio
+          ${{ env.OUTPUT_DIR }}/*.zip
+          ${{ env.OUTPUT_DIR }}/*.md5
 
     - name: Upload to Release
       if: success()
@@ -128,7 +126,7 @@ jobs:
       with:
         files: |
           ${{ env.OUTPUT_DIR }}/*.img
-          ${{ env.OUTPUT_DIR }}/PBRP*.zip
+          ${{ env.OUTPUT_DIR }}/*.zip
         name: PBRP for ${{ env.DEVICE_NAME }} - ${{ env.BUILD_DATE }}
         tag_name: ${{ github.run_id }}
         body: |
@@ -143,8 +141,9 @@ jobs:
           - **Branch:** ${{ env.DEVICE_TREE_BRANCH }}
           
           ## Build Status
-          - Recovery Image MD5: `${{ env.MD5_IMG }}`
-          - ZIP Package MD5: `${{ env.MD5_ZIP }}`
+          - Recovery Image MD5: see artifacts
+          
+          > Note: This is an automated build. Please test thoroughly before using.
         prerelease: false
         draft: false
 
@@ -166,7 +165,6 @@ jobs:
         seconds=$((BUILD_DURATION % 60))
         
         echo "Build completed in ${hours}h ${minutes}m ${seconds}s"
-        
         echo "BUILD_DURATION=${BUILD_DURATION}" >> $GITHUB_ENV
         echo "BUILD_HOURS=${hours}" >> $GITHUB_ENV
         echo "BUILD_MINUTES=${minutes}" >> $GITHUB_ENV

@@ -150,7 +150,7 @@ jobs:
 
           **📅 Build Date (UTC):** ${{ env.BUILD_DATE }}
           **🔢 Maintainer Patch Version:** 1
-          **⚡ Maintainer:** Romeo13card
+          **⚡ Maintainer:** romeo_13card
 
           ---
 
@@ -161,7 +161,7 @@ jobs:
           ---
 
           ### 💡 **Build Info**
-          - **OrangeFox Version:** R11.3 (from source)
+          - **OrangeFox Version:** R12.0 (from source)
           - **Build Type:** Unofficial
           - **Device:** ${{ inputs.DEVICE_NAME }}
 

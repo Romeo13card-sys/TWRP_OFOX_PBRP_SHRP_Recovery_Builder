@@ -100,6 +100,17 @@ jobs:
         cd ${{ inputs.DEVICE_PATH }}
         echo "COMMIT_ID=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
+    # ✅ ДОБАВЛЕНО: Клонирование ядра с исправлением конфига
+    - name: Clone kernel tree
+      run: |
+        cd ${{ env.ORANGEFOX_ROOT }}
+        rm -rf kernel/xiaomi/fog
+        git clone --depth=1 https://github.com/alternoegraha/kernel_xiaomi_sm6225 -b motregen kernel/xiaomi/fog
+        # Создаём недостающий конфиг для сборки
+        cp kernel/xiaomi/fog/arch/arm64/configs/vendor/xiaomi/fog.config kernel/xiaomi/fog/arch/arm64/configs/vendor/fog-perf_defconfig
+        ls -la kernel/xiaomi/fog/arch/arm64/configs/vendor/
+
+    # ✅ ИСПРАВЛЕНА КОМАНДА СБОРКИ
     - name: Building OrangeFox Recovery
       run: |
         pushd ${{ env.ORANGEFOX_ROOT }}
@@ -110,7 +121,9 @@ jobs:
         source build/envsetup.sh
         export ALLOW_MISSING_DEPENDENCIES=true
         set -e
-        lunch twrp_${{ inputs.DEVICE_NAME }}-eng && make clean && mka adbd ${{ inputs.BUILD_TARGET }}image
+        lunch twrp_${{ inputs.DEVICE_NAME }}-eng
+        # Убрали make clean (удаляет ядро) и изменили команду на правильную для OrangeFox
+        mka recoveryimage -j$(nproc --all)
         popd
 
     - name: Set build date (UTC)
